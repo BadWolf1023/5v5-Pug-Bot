@@ -254,7 +254,7 @@ def private_data_init():
     with open(private_info_file, "r") as f:
         testing_bot_key = f.readline().strip("\n")
         bot_key = f.readline().strip("\n")
-        MMR.google_api_key = f.readline().strip("\n")
+        Shared.google_api_key = f.readline().strip("\n")
 
 @client.event
 async def on_ready():

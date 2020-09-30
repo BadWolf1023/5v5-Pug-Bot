@@ -221,57 +221,45 @@ class TierMogi(object):
     def is_get_host(self, message:str, prefix:str=Shared.prefix):
         return Shared.is_in(message, get_host_terms, prefix)
     
-    
-    
-    
-    def has_authority(self, author:discord.Member, valid_roles:set, admin_allowed=True):
-        if admin_allowed:
-            if author.guild_permissions.administrator:
-                return True
-            
-        for role in author.roles:
-            if role.id in valid_roles:
-                return True
-        return False 
         
-    def can_ping(self, author:discord.Member):
+    def _can_ping(self, author:discord.Member):
         if self.isFull() or not self.hasHalfOrMore():
             return False
-        return self.has_authority(author, can_ping)
-    def can_esn(self, author:discord.Member):
+        return Shared.has_authority(author, can_ping)
+    def _can_esn(self, author:discord.Member):
         if self.start_time != None:
             time_passed = datetime.now() - self.start_time
             if time_passed >= ESN_WAIT_TIME:
                 return True
-        return self.has_authority(author, can_esn)
-    def can_mmrlu(self):
+        return Shared.has_authority(author, can_esn)
+    def _can_mmrlu(self):
         if self.last_mmrlu_time != None:
             time_passed = datetime.now() - self.last_mmrlu_time
             if time_passed < MMR_LU_WAIT_TIME:
                 return False
         return True
-    def can_remove(self, author:discord.Member):
-        return self.has_authority(author, can_remove)
+    def _can_remove(self, author:discord.Member):
+        return Shared.has_authority(author, can_remove)
     
 
-    def can_send_list(self):
+    def _can_send_list(self):
         if self.last_list_time == None:
             return True
         time_passed = datetime.now() - self.last_list_time
         return time_passed >= LIST_WAIT_TIME
-    def can_send_ml(self):
+    def _can_send_ml(self):
         if self.last_ml_time == None:
             return True
         time_passed = datetime.now() - self.last_ml_time
         return time_passed >= ML_WAIT_TIME
     
-    def can_send_mllu(self):
+    def _can_send_mllu(self):
         if self.last_mllu_time == None:
             return True
         time_passed = datetime.now() - self.last_mllu_time
         return time_passed >= MLLU_WAIT_TIME
     
-    def can_set_host(self):
+    def _can_set_host(self):
         return self.start_time != None
     
     def get_mmr_str(self, double_line=True):
@@ -729,14 +717,14 @@ class TierMogi(object):
                 
                 
         elif self.is_esn(message_str):
-            if self.can_esn(message.author):
+            if self._can_esn(message.author):
                 await self.send_esn(message)
                 self.reset()
             else:
                 await message.channel.send(message.author.display_name + " does not have permission to end this mogi", delete_after=medium_delete)
         
         elif self.is_remove(message_str):
-            if self.can_remove(message.author):
+            if self._can_remove(message.author):
                 args = Shared.strip_prefix(message_str).split()
                 if len(args) >= 1 and args[1].strip().isnumeric():
                     remove_number = int(args[1].strip())
@@ -746,24 +734,24 @@ class TierMogi(object):
                         
         
         elif self.is_ping(message_str):
-            if self.can_ping(message.author):
+            if self._can_ping(message.author):
                 await message.delete()
                 await self.send_ping(message)
                 
         elif self.is_list(message_str):
-            if self.can_send_list():
+            if self._can_send_list():
                 await self.send_list(message)
         
         elif self.is_ml(message_str):
-            if self.can_send_ml():
+            if self._can_send_ml():
                 await self.send_ml(message, all_mogis, include_players=False)
                 
         elif self.is_mllu(message_str):
-            if self.can_send_mllu():
+            if self._can_send_mllu():
                 await self.send_ml(message, all_mogis, include_players=True)
         
         elif self.is_set_host(message_str):
-            if self.can_set_host():
+            if self._can_set_host():
                 await self.send_set_host(message)
             else:
                 await message.channel.send("You can only set host after the mogi has started.", delete_after=medium_delete)
