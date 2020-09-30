@@ -8,13 +8,11 @@ import Shared
 import copy
 from typing import List
 from datetime import datetime
-from aiohttp.web_response import json_response
 
 medium_delete = 10
 long_delete = 30
 
 mmr_lookup_terms = {"mmr"}
-mmrlu_lookup_terms = {"mmrlu", "mmrlineup"}
 
 runner_leaderboard_id = "341469667"
 google_sheets_url_base = "https://sheets.googleapis.com/v4/spreadsheets/"
@@ -35,6 +33,7 @@ def addRanges(base_url, ranges):
     for r in ranges:
         temp += "&ranges=" + r
     return temp
+
 class MMR(object):
 
     def __init__(self):
@@ -112,8 +111,14 @@ class MMR(object):
                 sorted_mmr[ind] = (sorted_mmr[ind][0], sorted_mmr[ind][1], "Unknown") 
         return sorted_mmr
     
-    async def send_mmr(self, message:discord.Message):
-        for_who = Shared.strip_prefix_and_command(message.content, mmr_lookup_terms)
+    
+    async def send_mmr(self, message:discord.Message, names=None, title="War Lounge MMR"):
+        for_who = ""
+        if names == None: 
+            for_who = Shared.strip_prefix_and_command(message.content, mmr_lookup_terms)
+        else: #I'm VERY lazy - I want to reuse this function for mmrlu, so I'm doing something a little inefficient
+            for_who = ",".join(names)
+            
         to_look_up = []
         if len(for_who) == 0: #get mmr for author
             to_look_up = [message.author.display_name]
@@ -149,7 +154,7 @@ class MMR(object):
             return
         
         embed = discord.Embed(
-                                title = "War Lounge MMR",
+                                title = title,
                                 colour = discord.Colour.dark_blue()
                             )
         

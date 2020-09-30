@@ -6,6 +6,7 @@ Created on Sep 26, 2020
 import discord
 import Player
 import Shared
+import MMR
 from _datetime import timedelta
 from datetime import datetime
 import TierMogiPicklable
@@ -23,6 +24,7 @@ esn_terms = {"esn", "endstartnext"}
 list_terms = {"l", "s", "list"}
 remove_terms = {"r", "remove"}
 ping_terms = {"p", "h", "here", "mention", "m"}
+mmrlu_lookup_terms = {"mmrlu", "mmrlineup"}
 ml_terms = Shared.ml_terms
 mllu_terms = Shared.mllu_terms
 set_host_terms = {"sethost", "sh"}
@@ -46,6 +48,7 @@ ESN_WAIT_TIME = timedelta(minutes=40)
 PING_INTERVAL = timedelta(minutes=10)
 ML_WAIT_TIME = timedelta(seconds=15)
 MLLU_WAIT_TIME = timedelta(seconds=45)
+MMR_LU_WAIT_TIME = timedelta(seconds=30)
 quick_delete = 5
 medium_delete = 5
 long_delete = 30
@@ -69,6 +72,8 @@ class TierMogi(object):
         self.bagger_count = 0
         self.runner_count = 0
         self.host = None
+        self.host = None
+        self.last_mmrlu_time = None
     
     def getPicklableTierMogi(self):
         temp = [p.getPickablePlayer() for p in self.mogi_list]
@@ -95,10 +100,8 @@ class TierMogi(object):
         self.last_ping_time = picklableTierMogi.last_ping_time
         self.bagger_count = picklableTierMogi.bagger_count
         self.runner_count = picklableTierMogi.runner_count
-        if 'host' in picklableTierMogi.__dict__:
-            self.host = picklableTierMogi.host
-        else:
-            self.host = None
+        self.host = picklableTierMogi.host
+        self.last_mmrlu_time = None
         
     
     def recalculate(self):
@@ -209,11 +212,15 @@ class TierMogi(object):
     def is_mllu(self, message:str, prefix:str=Shared.prefix):
         return Shared.is_in(message, mllu_terms, prefix)
     
+    def is_mmrlu(self, message:str, prefix:str=Shared.prefix):
+        return Shared.is_in(message, mmrlu_lookup_terms, prefix)
+    
     def is_set_host(self, message:str, prefix:str=Shared.prefix):
         return Shared.is_in(message, set_host_terms, prefix)
     
     def is_get_host(self, message:str, prefix:str=Shared.prefix):
         return Shared.is_in(message, get_host_terms, prefix)
+    
     
     
     
@@ -237,6 +244,12 @@ class TierMogi(object):
             if time_passed >= ESN_WAIT_TIME:
                 return True
         return self.has_authority(author, can_esn)
+    def can_mmrlu(self):
+        if self.last_mmrlu_time != None:
+            time_passed = datetime.now() - self.last_mmrlu_time
+            if time_passed < MMR_LU_WAIT_TIME:
+                return False
+        return True
     def can_remove(self, author:discord.Member):
         return self.has_authority(author, can_remove)
     
@@ -455,7 +468,10 @@ class TierMogi(object):
             if include_players:
                 msg_str += "\n"
                 for player in mogi.mogi_list:
-                    msg_str += player.member.display_name + ", "
+                    msg_str += player.member.display_name
+                    if player.is_bagger():
+                        msg_str += " (bagger)"
+                    msg_str += ", "
                 msg_str = msg_str[:-2]
         if not include_players:
             msg_str += "\n\nTo get the line up for each mogi, type `!mogilistlineup` or `!mllu`"
@@ -638,7 +654,16 @@ class TierMogi(object):
                 await message.channel.send(message.author.display_name + " dropped from 1 mogi, could not drop from " + str(failed_drop) + " mogi because it is full", delete_after=medium_delete)
             else:
                 await message.channel.send(message.author.display_name + " dropped from " + str(success_drop) + " mogis, could not drop from " + str(failed_drop) + " mogi because it is full", delete_after=medium_delete)
-        
+      
+    async def send_mmrlu(self, message:discord.Message):
+        self.last_mmrlu_time = datetime.now()
+        if self.mogi_list == None or len(self.mogi_list) == 0:
+            await message.channel.send("There are no players in the mogi.", delete_after=medium_delete)
+        else:
+            mmr_object = MMR.MMR()
+            player_list = [p.member.display_name for p in self.mogi_list]
+            await mmr_object.send_mmr(message, player_list[:11], "War Lounge MMR (Lineup)")
+    
     async def drop_warn_check(self):
         if self.start_time == None:
             await self.warn_drop()
@@ -655,6 +680,7 @@ class TierMogi(object):
                 if (time_passed >= PING_INTERVAL):
                     return True
         return False
+    
             
     async def sent_message(self, message:discord.Message, all_mogis=None):
         self.__update__(message.author)
@@ -743,6 +769,10 @@ class TierMogi(object):
                 await message.channel.send("You can only set host after the mogi has started.", delete_after=medium_delete)
         elif self.is_get_host(message_str):
             await self.send_host(message)
+            
+        elif self.is_mmrlu(message_str):
+            if self.can_mmrlu():
+                await self.send_mmrlu(message)
         else:
             return False
         
