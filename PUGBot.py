@@ -250,10 +250,10 @@ def get_member(members, member_id):
 
 def private_data_init():
     global testing_bot_key
-    global real_bot_key
+    global bot_key
     with open(private_info_file, "r") as f:
         testing_bot_key = f.readline().strip("\n")
-        real_bot_key = f.readline().strip("\n")
+        bot_key = f.readline().strip("\n")
         MMR.google_api_key = f.readline().strip("\n")
 
 @client.event

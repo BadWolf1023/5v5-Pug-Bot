@@ -95,7 +95,10 @@ class TierMogi(object):
         self.last_ping_time = picklableTierMogi.last_ping_time
         self.bagger_count = picklableTierMogi.bagger_count
         self.runner_count = picklableTierMogi.runner_count
-        self.host = picklableTierMogi.host
+        if 'host' in picklableTierMogi.__dict__:
+            self.host = picklableTierMogi.host
+        else:
+            self.host = None
         
     
     def recalculate(self):
