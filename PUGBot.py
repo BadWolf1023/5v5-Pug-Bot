@@ -34,7 +34,7 @@ allowed_mogi_categories = [ECHELON_CATEGORY, BOT_TESTING_CATEGORY, MODERATION_CA
 #mogi_bot_id = 450127943012712448
 DEBUGGING = False
 
-tier_mogi_instances = {}
+tier_mogi_instances = None
 mmr_channel_instances = {}
 tier_instances = {}
 client = discord.Client()
@@ -117,14 +117,14 @@ async def on_message(message: discord.Message):
     if message.guild.id != pug_lounge_server_id:
         return
     
-    channel_id = message.channel.id
+    channel_id = message.channel.id    
     
     if message.channel.category_id in allowed_mogi_categories or\
     Shared.is_ml(message.content) or Shared.is_mllu(message.content):
         if message.channel.id not in tier_mogi_instances:
             tier_mogi_instances[channel_id] = TierMogi.TierMogi(message.channel)
         tier_mogi = tier_mogi_instances[channel_id]
-        was_mogi_command = await tier_mogi.sent_message(message, tier_mogi_instances.values())
+        was_mogi_command = await tier_mogi.sent_message(message, tier_mogi_instances)
         if was_mogi_command:
             return
     
@@ -255,54 +255,58 @@ def private_data_init():
         testing_bot_key = f.readline().strip("\n")
         bot_key = f.readline().strip("\n")
         Shared.google_api_key = f.readline().strip("\n")
+        Shared.google_sheet_gid_url = Shared.google_sheets_url_base + Shared.google_sheet_id + "/values:batchGet?" + "key=" + Shared.google_api_key
 
 @client.event
 async def on_ready():
     """global user_flag_exceptions
     unlockCheck.start()"""
     global tier_mogi_instances
-    if os.path.exists(pickle_dump_path):
-        guild = client.get_guild(pug_lounge_server_id)
-        members = guild.members
-        channels = guild.text_channels
-        picklable_dict = {}
-        with open(pickle_dump_path, "rb") as pickle_in:
-            try:
-                picklable_dict = p.load(pickle_in)
-            except:
-                print("Could not read tier instances in.")
-                picklable_dict = {}
-                raise
-            
-        new_tier_instances = {}
-        for channel_id, picklable_tier_mogi in picklable_dict.items():
-            cur_channel = get_channel(channels, picklable_tier_mogi.channel_id)
-            if cur_channel == None:
-                continue
-            
-            mogi_list = []
-            player_error = False
-            for picklable_player in picklable_tier_mogi.mogi_list:
-                curPlayer = Player.Player(None, None)
-                curMember = get_member(members, picklable_player.member_id)
-                if curMember == None:
-                    player_error = True
-                else:
-                    curPlayer.reconstruct(picklable_player, curMember)
-                    mogi_list.append(curPlayer)
-            curTier = TierMogi.TierMogi(None)
-            curTier.reconstruct(mogi_list, cur_channel, picklable_tier_mogi)
-            if player_error:
-                curTier.recalculate()
-            new_tier_instances[channel_id] = curTier
-            
-        tier_mogi_instances = new_tier_instances
-    
+    if tier_mogi_instances == None:
+        tier_mogi_instances = {}
+        if os.path.exists(pickle_dump_path):
+            guild = client.get_guild(pug_lounge_server_id)
+            members = guild.members
+            channels = guild.text_channels
+            picklable_dict = {}
+            with open(pickle_dump_path, "rb") as pickle_in:
+                try:
+                    picklable_dict = p.load(pickle_in)
+                except:
+                    print("Could not read tier instances in.")
+                    picklable_dict = {}
+                    raise
+                
+            new_tier_instances = {}
+            for channel_id, picklable_tier_mogi in picklable_dict.items():
+                cur_channel = get_channel(channels, picklable_tier_mogi.channel_id)
+                if cur_channel == None:
+                    continue
+                
+                mogi_list = []
+                player_error = False
+                for picklable_player in picklable_tier_mogi.mogi_list:
+                    curPlayer = Player.Player(None, None)
+                    curMember = get_member(members, picklable_player.member_id)
+                    if curMember == None:
+                        player_error = True
+                    else:
+                        curPlayer.reconstruct(picklable_player, curMember)
+                        mogi_list.append(curPlayer)
+                curTier = TierMogi.TierMogi(None)
+                curTier.reconstruct(mogi_list, cur_channel, picklable_tier_mogi)
+                if player_error:
+                    curTier.recalculate()
+                new_tier_instances[channel_id] = curTier
+                
+            tier_mogi_instances = new_tier_instances
+        
     Shared.backup_player_fc_pickle()
     Shared.load_player_fc_pickle()
         
     routine_tier_checks.start()
     backup_player_fcs.start()
+    print("Finished on ready.")
     
 
 

@@ -13,8 +13,10 @@ from datetime import datetime
 import re
 from typing import List, Tuple, Set, Dict
 import copy
+import Player
 
 prefix = "!"
+war_lounge_live = False
 
 REPORTER_ID = 751956336706846776
 UPDATER_ID = 751956336706846778
@@ -119,8 +121,9 @@ backup_file_list = [player_fc_pickle_path]
 add_fc_commands = {"setfc"}
 get_fc_commands = {"fc"}
 #Need here to avoid circular import...
-ml_terms = {"ml","mogilist"}
-mllu_terms = {"mllu","mogilistlineup"}
+ml_terms = {"ml","mogilist", "wl", "warlist"}
+mllu_terms = {"mllu","mogilistlineup","wllu","warlistlineup"}
+go_live_terms = {"golive"}
 update_role_terms = {"ur", "updaterole"}
 
 google_sheets_url_base = "https://sheets.googleapis.com/v4/spreadsheets/"
@@ -202,7 +205,9 @@ def strip_prefix_and_command(message:str, valid_terms:set, prefix:str=prefix):
     return message.strip()
 
 def is_boss(member:discord.Member):
-    return BOSS_ID in member.roles
+    return has_any_role_ids(member, {BOSS_ID})
+def is_developer(member:discord.Member):
+    return has_any_role_ids(member, {DEVELOPER_ID})
 
 def has_authority(author:discord.Member, valid_roles:set, admin_allowed=True):
     if admin_allowed:
@@ -312,6 +317,8 @@ def _fix_fc(fc):
 #returns runner and bagger mmr list from Google Sheets
     #Returns None,None is either data is corrupt
 def get_mmr_for_names(names:List[str], mmr_list):
+    if len(names) == 0:
+        return {}
     to_send_back = {}
     for name in names:
         temp = name.replace(" ","").lower()
@@ -320,29 +327,63 @@ def get_mmr_for_names(names:List[str], mmr_list):
         if temp not in to_send_back:
             to_send_back[temp] = (name.strip(), -1)
     
-    for lookup in to_send_back:
-        for player_and_mmr in mmr_list:
-            if not isinstance(player_and_mmr, list) or len(player_and_mmr) != 2\
-                    or not isinstance(player_and_mmr[0], str) or not isinstance(player_and_mmr[1], str)\
-                    or not player_and_mmr[1].isnumeric():
+    for player_and_mmr in mmr_list:
+        if not isinstance(player_and_mmr, list) or len(player_and_mmr) != 2\
+                or not isinstance(player_and_mmr[0], str) or not isinstance(player_and_mmr[1], str):
+            break
+        if not player_and_mmr[1].isnumeric():
+            try:
+                float(player_and_mmr[1])
+            except ValueError:
                 break
-            if lookup == player_and_mmr[0].replace(" ", "").lower():
-                to_send_back[lookup] = (player_and_mmr[0].strip(), int(player_and_mmr[1]))
+        lookup = player_and_mmr[0].replace(" ", "").lower()
+        if lookup in to_send_back.keys():
+            to_send_back[lookup] = (player_and_mmr[0].strip(), int(float(player_and_mmr[1])))
+            #check if we' found everyone - this is an efficiency thing, and not strictly necessary
+            #For curiosity sake, if the lookup was all high MMR players, this little check right here makes this function super fast
+            #But if the check was for even one low mmr player, this check does almost nothing to speed this up
+            found_count = sum(1 for p in to_send_back.values() if p[1] != -1)
+            if found_count >= len(to_send_back):
+                break
+    
     return to_send_back
 
-def get_mmr_for_members(members:List[discord.Member], mmr_list):
+def get_mmr_for_members(members, mmr_list):
+    if len(members) == 0:
+        return {}
+    is_discord_members = False
+    if isinstance(members[0], discord.Member):
+        is_discord_members = True
+    elif isinstance(members[0], Player.Player):
+        is_discord_members = False
+    else:
+        print("Well, you done messed up somehow. Don't call get_mmr_for_members with type " + type(members))
+        return {}
+    
     to_send_back = {}
-    for member in members:
-        lookup = member.display_name.replace(" ","").lower()
-        mmr = -1
-        for player_and_mmr in mmr_list:
-            if not isinstance(player_and_mmr, list) or len(player_and_mmr) != 2\
-                    or not isinstance(player_and_mmr[0], str) or not isinstance(player_and_mmr[1], str)\
-                    or not player_and_mmr[1].isnumeric():
+    for m in members:
+        if is_discord_members:
+            to_send_back[hash(m)] = (m, -1)
+        else:
+            to_send_back[hash(m.member)] = (m, -1)
+        
+    for player_and_mmr in mmr_list:
+        if not isinstance(player_and_mmr, list) or len(player_and_mmr) != 2\
+                or not isinstance(player_and_mmr[0], str) or not isinstance(player_and_mmr[1], str):
+            break
+        if not player_and_mmr[1].isnumeric():
+            try:
+                float(player_and_mmr[1])
+            except ValueError:
                 break
-            if lookup == player_and_mmr[0].replace(" ", "").lower():
-                mmr = int(player_and_mmr[1])
-        to_send_back[hash(member)] = (member, mmr)
+        lookup = player_and_mmr[0].replace(" ", "").lower()
+
+        for m_hash, (m, _) in to_send_back.items():
+            if not is_discord_members:
+                m = m.member
+            if lookup == m.display_name.replace(" ", "").lower():
+                to_send_back[m_hash] = (to_send_back[m_hash][0], int(float(player_and_mmr[1])))
+    
     return to_send_back
 
 def get_runner_mmr_list(json_resp): #No error handling - caller is responsible that the data is good
@@ -357,6 +398,17 @@ def combine_mmrs(runner_mmr_dict, bagger_mmr_dict):
     for lookup in runner_mmr_dict:
         mmr_dict[lookup] = runner_mmr_dict[lookup][0], runner_mmr_dict[lookup][1], bagger_mmr_dict[lookup][1]
     return mmr_dict
+
+def combine_and_sort_mmrs(runner_mmr_dict, bagger_mmr_dict): #caller has responsibility of making sure the keys for both dicts are the same
+    mmr_dict = combine_mmrs(runner_mmr_dict, bagger_mmr_dict)
+    
+    sorted_mmr = sorted(mmr_dict.values(), key=lambda p: (-p[1], -p[2], p[0])) #negatives are a hack way, so that in case of a tie, the names will be sorted alphabetically
+    for ind, item in enumerate(sorted_mmr):
+        if item[1] == -1:
+            sorted_mmr[ind] = (sorted_mmr[ind][0], "Unknown", sorted_mmr[ind][2]) 
+        if item[2] == -1:
+            sorted_mmr[ind] = (sorted_mmr[ind][0], sorted_mmr[ind][1], "Unknown") 
+    return sorted_mmr
 
 def mmr_data_is_corrupt(json_resp):
         if not isinstance(json_resp, dict): 
@@ -385,7 +437,11 @@ def mmr_data_is_corrupt(json_resp):
     
 async def pull_all_mmr():
     full_url = addRanges(google_sheet_gid_url, [runner_mmr_range, bagger_mmr_range])
-    json_resp = await fetch(full_url)
+    json_resp = None
+    try:
+        json_resp = await fetch(full_url)
+    except:
+        return None, None
     if mmr_data_is_corrupt(json_resp):
         return None, None
     
@@ -493,6 +549,8 @@ def is_get_fc_check(message:str, prefix=prefix):
     return is_in(message, get_fc_commands, prefix)
 def is_update_role(message:str, prefix=prefix):
     return is_in(message, update_role_terms, prefix)
+def is_go_live(message:str, prefix=prefix):
+    return is_in(message, go_live_terms, prefix)
  
 async def send_add_fc(message:discord.Message, valid_terms=add_fc_commands, prefix=prefix):
     str_msg = message.content
@@ -552,12 +610,18 @@ async def process_other_command(message:discord.Message, prefix=prefix):
             
             mappings, success = get_role_mapping(set(RUNNER_ROLES | BAGGER_ROLES), message.guild)
             if not success:
-                await message.channel.send("Could not map roles. No changes made. You should tell Bad Wolf that this happened this means his code has an error.")
+                await message.channel.send("Could not map roles. No changes made. You should tell Bad Wolf that this happened. This means his code has an error.")
                 return
             to_be_changed = get_role_changes(combined, mappings)
             results = await process_changes(to_be_changed, message.guild.emojis)
             if len(results) != 0:
                 await message.channel.send(results)
+    elif is_go_live(message.content, prefix=prefix):
+        if is_boss(message.author) or is_developer(message.author):
+            global war_lounge_live
+            war_lounge_live = not war_lounge_live
+            await message.channel.send("War Lounge live: " + str(war_lounge_live))
+        
     else:
         return False
     return True

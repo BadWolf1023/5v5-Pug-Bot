@@ -5,8 +5,6 @@ Created on Sep 28, 2020
 '''
 import discord
 import Shared
-import copy
-from typing import List
 from datetime import datetime
 
 medium_delete = 10
@@ -27,33 +25,16 @@ bagger_leaderboard_name = Shared.bagger_leaderboard_name
 class MMR(object):
 
     def __init__(self):
-        Shared.google_sheet_gid_url = google_sheets_url_base + google_sheet_id + "/values:batchGet?" + "key=" + Shared.google_api_key
         self.last_mmr_pull = datetime.now()
         
     
     def is_mmr_check(self, message:str, prefix:str=Shared.prefix):
         return Shared.is_in(message, mmr_lookup_terms, prefix)  
     
-    def combine_and_sort_mmrs(self, runner_mmr_dict, bagger_mmr_dict): #caller has responsibility of making sure the keys for both dicts are the same
-        mmr_dict = Shared.combine_mmrs(runner_mmr_dict, bagger_mmr_dict)
+    
+    async def send_mmr(self, message:discord.Message):
+        for_who = Shared.strip_prefix_and_command(message.content, mmr_lookup_terms)
         
-        sorted_mmr = sorted(mmr_dict.values(), key=lambda p: (-p[1], -p[2], p[0])) #negatives are a hack way, so that in case of a tie, the names will be sorted alphabetically
-        for ind, item in enumerate(sorted_mmr):
-            if item[1] == -1:
-                sorted_mmr[ind] = (sorted_mmr[ind][0], "Unknown", sorted_mmr[ind][2]) 
-            if item[2] == -1:
-                sorted_mmr[ind] = (sorted_mmr[ind][0], sorted_mmr[ind][1], "Unknown") 
-        return sorted_mmr
-    
-    
-    
-    async def send_mmr(self, message:discord.Message, names=None, title="War Lounge MMR"):
-        for_who = ""
-        if names == None: 
-            for_who = Shared.strip_prefix_and_command(message.content, mmr_lookup_terms)
-        else: #I'm VERY lazy - I want to reuse this function for mmrlu, so I'm doing something a little inefficient
-            for_who = ",".join(names)
-            
         to_look_up = []
         if len(for_who) == 0: #get mmr for author
             to_look_up = [message.author.display_name]
@@ -73,14 +54,13 @@ class MMR(object):
             return
         results_runner = Shared.get_mmr_for_names(to_look_up, runner_mmr)
         results_bagger = Shared.get_mmr_for_names(to_look_up, bagger_mmr)
-        combined_mmrs = self.combine_and_sort_mmrs(results_runner, results_bagger) 
-        
+        combined_mmrs = Shared.combine_and_sort_mmrs(results_runner, results_bagger) 
         
         if len(combined_mmrs) == 0:
             return
         
         embed = discord.Embed(
-                                title = title,
+                                title = "War Lounge MMR",
                                 colour = discord.Colour.dark_blue()
                             )
         
@@ -100,5 +80,25 @@ class MMR(object):
         if self.is_mmr_check(message.content):
             await self.send_mmr(message)
             return True
+        elif message.content == "!runners":
+            runner_list = []
+            for member in message.guild.members:
+                if Shared.has_runner_role(member):
+                    runner_list.append((member.display_name, Shared.get_runner_role_ids(member, True)))
+            
+            runner_list.sort()
+            print("Members with a runner role:\n")
+            for runner in runner_list:
+                print(runner[0] + "\t\t" + str(runner[1][0]))
+        elif message.content == "!baggers":
+            bagger_list = []
+            for member in message.guild.members:
+                if Shared.has_bagger_role(member):
+                    bagger_list.append((member.display_name, Shared.get_bagger_role_ids(member, True)))
+            
+            bagger_list.sort()
+            print("Members with a bagger role:\n")
+            for bagger in bagger_list:
+                print(bagger[0] + "\t\t" + str(bagger[1][0]))
         
         return False

@@ -5,7 +5,6 @@ Created on Sep 26, 2020
 '''
 import discord
 import PlayerPicklable
-import Shared
 from datetime import datetime, timedelta
 warn_drop_period = timedelta(minutes=25)
 drop_period = timedelta(minutes=30)
