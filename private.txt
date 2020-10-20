@@ -1,3 +1,3 @@
-None
+Ignore this line
 Discord Bot Key goes on this line
-Google Sheets API Key goes on this line
+Ignore this line
